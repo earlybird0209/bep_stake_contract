@@ -126,13 +126,14 @@ contract StakingTest is Ownable {
     uint256 public startBlock; // The block number when USDT rewards starts.
     uint256 public DROP_RATE = 60; //0.6 % per day
 
-    uint256 public Friday = 1684454400; // this is the 00:00:00 Friday of initiateAction
+    uint256 public Friday = 1682640000; // this is the 00:00:00 Friday of initiateAction
     address public NFTaddress; // this is the OG NFT contract address
     address public NFTaddress2; // this is the Whitelist NFT contract address
+    address public NFTaddress3; // this is the Whitelist NFT contract address
 
     uint256 public seconds_per_day = 15; 
     uint256 public warm_up_period = 28 * seconds_per_day; 
-    uint256 public unlock_period = 56  * seconds_per_day; 
+    uint256 public unlock_period = 60  * seconds_per_day; 
     uint256 public initiate_delay = 7  * seconds_per_day; 
     uint256 public reward_period = 14  * seconds_per_day; 
     uint256 public withdraw_delay = 30 * seconds_per_day; 
@@ -140,12 +141,14 @@ contract StakingTest is Ownable {
     IBEP20 public USDT;
     myNFT NFTContract;
     myNFT NFTContract2;
+    myNFT NFTContract3;
 
     mapping(address => UserInfo) public userInfo;
 
     struct Depo {
         uint256 amount; //deposit amount
-        uint256 createdTime; //deposit time or relock time
+        uint256 createdTime; //deposit time
+        uint256 lockedTime; //locked time this is updated when relocked
         uint256 withdrawableDate; // The day user is able to withdraw funds
         uint256 lastRewardTime; // last time user did claim/compound reward from this also used to determine one action for rewards in biweek
         uint256 currentState; // after 60 days users decides to re-lock or withdraw deposit, 0 means locked , 1 relocked or compounded, 2 to withdraw, 3 overLimit withdraw
@@ -156,33 +159,34 @@ contract StakingTest is Ownable {
         mapping(uint256 => Depo) deposits;
         uint256 NoOfDeposits; // No. of deposits
         address WithdrawAddress; //by default msg.sender, can change with changeWithdrawalAddress()
-        bool ClaimInitiated; //0 if normal 1 if claim initiated
+        uint256 ClaimInitiateDate; // for initial delay
     }
 
     address[] public UsersInfo;
 
-    event AdminTokenRecovery(address indexed tokenRecovered, uint256 amount);
-    event Deposit(address indexed user, uint256 amount);
-    event UserWithdraw(address indexed user, uint256 amount);
+    event AdminTokenRecovery(address indexed tokenRecovered, uint256 amount, uint256 time);
+    event Deposit(address indexed user, uint256 amount, uint256 time);
+    event WithdrawIsInitiated(
+        address indexed user,
+        uint256 depoNumber, uint256 time
+    );
+    event UserWithdraw(address indexed user, uint256 amount, uint256 time);
     event SetFees(
         uint256 depositFeeBP,
         uint256 withdrawFeeBP,
-        uint256 compoundFeeBP
+        uint256 compoundFeeBP,
+        uint256 time
     );
 
-    event ClaimIsInitiated(address indexed user, uint256 unlockDay);
-    event ClaimComplete(address indexed user, uint256 amount, uint256 unlockDay);
-    event CompoundComplete(address indexed user,uint256 amount, uint256 unlockDay);
+    event ClaimIsInitiated(address indexed user, uint256 time);
+    event ClaimComplete(address indexed user, uint256 amount, uint256 time);
+    event CompoundComplete(address indexed user,uint256 amount, uint256 time);
 
-    event WithdrawIsInitiated(
-        address indexed user,
-        uint256 depoNumber,
-        uint256 unlockDay
-    );
     //this is for test
     constructor(
         address nft1,
         address nft2,
+        address nft3,
         address usdt
     ) {
         feeWallet = 0xE3cBf30FF2ceE746db1Db7648657fE774A55CFdD;
@@ -190,8 +194,10 @@ contract StakingTest is Ownable {
         USDT = IBEP20(usdt);
         NFTaddress = nft1;
         NFTaddress2 = nft2;
+        NFTaddress3 = nft3;
         NFTContract = myNFT(nft1);
         NFTContract2 = myNFT(nft2);
+        NFTContract3 = myNFT(nft3);
     }
     // constructor(
     // ) {
@@ -208,14 +214,11 @@ contract StakingTest is Ownable {
        
         require(
             NFTContract.balanceOf(user) != 0 ||
-                NFTContract2.balanceOf(user) != 0,
+            NFTContract2.balanceOf(user) != 0 ||
+            NFTContract3.balanceOf(user) != 0
+            ,
             "User doesn't own NFT"
         );
-        _;
-    }
-
-    modifier onlyActionDay() {
-        require(getDifferenceFromActionDay(block.timestamp) >= 7, "Only after 7d");
         _;
     }
 
@@ -240,62 +243,11 @@ contract StakingTest is Ownable {
     /**
      * @notice function to change NFT contract addresses.
      */
-    function changeNFTcontract(address _NFT, address _NFT2) external onlyOwner {
-        require(_NFT != address(0) && _NFT2 != address(0));
+    function changeNFTcontract(address _NFT, address _NFT2, address _NFT3) external onlyOwner {
+        require(_NFT != address(0) && _NFT2 != address(0) && _NFT3 != address(0));
         NFTContract = myNFT(_NFT);
         NFTContract2 = myNFT(_NFT2);
-    }
-
-    /** completed
-     * @notice function to migrate user deposits
-     * @param _user: user address
-     * @param _amount: amount ( MINUS depositfee)
-     * @param date: date of deposit
-     */
-    function createDeposits(
-        address _user,
-        uint256 _amount, // amount with deposit fee deduced
-        uint256 date
-    ) external payable onlyOwner {
-        UserInfo storage user = userInfo[_user];
-
-        if (user.NoOfDeposits == 0) {
-            UsersInfo.push(_user);
-            user.WithdrawAddress = _user;
-        }
-        uint256 currentTime = get0000OfTime(date);
-        user.deposits[user.NoOfDeposits] = Depo({
-            amount: _amount,
-            createdTime: currentTime,
-            lastRewardTime: getComingActionDay(date),
-            currentState: 0,
-            isCompound: 0,
-            withdrawableDate: 0
-        });
-        user.NoOfDeposits += 1;
-    }
-
-    /**
-     * @notice function to migrate user compounds
-     * @param _user: user address
-     */
-    function createCompound(
-        address _user
-    ) external payable onlyOwner {
-        
-        
-    }
-
-    /**
-     * @notice function to migrate user claims
-     * @param _user: user address
-     */
-    function createInitiateClaim(
-        address _user
-    ) external payable onlyOwner {
-        UserInfo storage user = userInfo[_user];
-        user.ClaimInitiated = true;
-        emit ClaimIsInitiated(_user, 1682642278);
+        NFTContract3 = myNFT(_NFT3);
     }
 
     /** completed
@@ -317,6 +269,7 @@ contract StakingTest is Ownable {
         user.deposits[user.NoOfDeposits] = Depo({
             amount: _amount - depositFee,
             createdTime: get0000OfTime(block.timestamp),
+            lockedTime: get0000OfTime(block.timestamp),
             lastRewardTime: getComingActionDay(block.timestamp + warm_up_period),
             currentState: 0,
             isCompound: 0,
@@ -333,78 +286,78 @@ contract StakingTest is Ownable {
 
         USDT.transferFrom(address(msg.sender), EmergencyfeeWallet, depositFee);
 
-        emit Deposit(msg.sender, _amount);
+        emit Deposit(msg.sender, _amount, block.timestamp);
     }
 
+    /** completed
+     * @notice function to decide if user will keep deposit or withdraw
+     * @param _depo ; deposit number
+     * easily checked decision is always 1 from the Web3
+     * so only used for relock
+     */
+    function RelockDeposit(uint256 _depo) external {
+        UserInfo storage user = userInfo[msg.sender];
+        Depo storage dep = user.deposits[_depo];
+        require(_depo != 0, "relock is not needed for first deposit");
+        require(dep.withdrawableDate == 0, "withdraw initiated");
+        require(block.timestamp > dep.lockedTime + unlock_period, "only after unlock period");
+        
+        dep.currentState = 1;
+        dep.lockedTime = get0000OfTime(block.timestamp);
+    }
     /** completed
      * @notice function to initiate a claim of all rewards that will be pending when the time comes.
      * easily checked
      */
     function InitiateClaim() external onlyInitiateActionDay {
         UserInfo storage user = userInfo[msg.sender];
-        require(user.ClaimInitiated == false,'claim action is already made '); // can't compound while a .
-        user.ClaimInitiated = true;
-        emit ClaimIsInitiated(msg.sender, get0000OfTime(block.timestamp));
-    }
-
-    /** completed
-     * @notice function to initiate a withdrawal of a deposit.
-     */
-    function InitiateWithdrawal(
-        uint256 _deposit
-    ) external {
-        UserInfo storage user = userInfo[msg.sender];
-        Depo storage dep = user.deposits[_deposit];
-        require(_deposit != 0, "first deposit cannot be withdrawn");
-        require(block.timestamp > dep.createdTime + unlock_period, "not enough unlock period");
-        require(dep.currentState == 0 || dep.currentState == 1, "deposit withdrawn"); // you cannot withdraw if you haven't first relocked your deposit
-        require(dep.withdrawableDate == 0, "already initiated");
-
-        dep.withdrawableDate = get0000OfTime(block.timestamp) + initiate_delay;
-        dep.currentState = 2;
-        emit WithdrawIsInitiated(
-            msg.sender,
-            _deposit,
-            dep.withdrawableDate - initiate_delay
-        );
+        require(user.ClaimInitiateDate  == 0,'claim action is already made '); // can't compound while a .
+        user.ClaimInitiateDate = get0000OfTime(block.timestamp);
+        emit ClaimIsInitiated(msg.sender, block.timestamp);
     }
 
     /** completed
      * @notice function to claim rewards from deposits.
      * easily checking
      */
-    function Claim() external onlyActionDay {
+    function Claim() external {
         UserInfo storage user = userInfo[msg.sender];
-        require(user.ClaimInitiated == true, "No claim initiated");
+        require(user.ClaimInitiateDate != 0 , "No claim initiated");
+        require(block.timestamp > user.ClaimInitiateDate + initiate_delay , "did not passed initiate delay");
 
         uint256 NoOfDeposits = user.NoOfDeposits;
         uint256 finalToClaim; // this is the total amount the user will receive
 
         for (uint256 i; i < NoOfDeposits; ) {
             Depo storage dep = user.deposits[i];
-
-            uint256 currentTime = get0000OfTime(block.timestamp);
+            //when user does not claim in claimableDate, cannot get reward from subsequent days
+            uint256 claimableDate = user.ClaimInitiateDate + initiate_delay;
             if (
-                canGetReward(dep.amount, dep.createdTime, dep.currentState, currentTime)
+                canGetReward(dep.amount, dep.lockedTime, dep.currentState, claimableDate)
             ) {
-                currentTime = (currentTime - dep.createdTime) > unlock_period ? dep.createdTime + unlock_period : currentTime;
-                finalToClaim += (currentTime - dep.lastRewardTime) * 
+                //first deposit is locked permanently
+                if(i != 0){
+                    claimableDate = (claimableDate - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : claimableDate;
+                }
+                finalToClaim += (claimableDate - dep.lastRewardTime) * 
                     dep.amount * DROP_RATE / 
                     seconds_per_day / 
                     10000 ;
-                dep.lastRewardTime = currentTime;
+                dep.lastRewardTime = claimableDate;
             }
             unchecked {
                 ++i;
             }
         }
+        uint256 currentTime = get0000OfTime(block.timestamp);
 
         // max claim is initially 10k USDT, if excess then create new Compounded Deposit
         if (finalToClaim > claimLimit) {
             user.deposits[NoOfDeposits] = Depo({
                 amount: finalToClaim - claimLimit,
-                createdTime: get0000OfTime(block.timestamp),
-                lastRewardTime: get0000OfTime(block.timestamp),
+                createdTime: currentTime,
+                lockedTime: currentTime,
+                lastRewardTime: currentTime,
                 currentState: 1,
                 isCompound: 1,
                 withdrawableDate: 0
@@ -417,7 +370,7 @@ contract StakingTest is Ownable {
         uint256 claimFee = (finalToClaim * withdrawFeeBP) / 10000; // this is the total fee for all claims
         finalToClaim -= claimFee;
 
-        user.ClaimInitiated = false;
+        user.ClaimInitiateDate = 0;
     
         USDT.transfer(feeWallet, claimFee);
         USDT.transfer(user.WithdrawAddress, finalToClaim);
@@ -427,11 +380,87 @@ contract StakingTest is Ownable {
     }
 
     /** completed
+     * @notice function to initiate a withdrawal of a deposit.
+     */
+    function InitiateWithdrawal(
+        uint256 _deposit
+    ) external onlyInitiateActionDay {
+        UserInfo storage user = userInfo[msg.sender];
+        Depo storage dep = user.deposits[_deposit];
+        require(_deposit != 0, "first deposit cannot be withdrawn");
+        require(block.timestamp > dep.lockedTime + unlock_period, "not enough unlock period");
+        require(dep.currentState == 0 || dep.currentState == 1, "deposit withdrawn"); // you cannot withdraw if you haven't first relocked your deposit
+        require(dep.withdrawableDate == 0, "already initiated");
+
+        dep.withdrawableDate = get0000OfTime(block.timestamp) + initiate_delay;
+        dep.currentState = 2;
+        emit WithdrawIsInitiated(
+            msg.sender,
+            _deposit, block.timestamp
+        );
+    }
+
+    /** completed
+     * @notice function to withdraw deposits.
+     */
+    function Withdraw(
+        uint256 _deposit
+    ) external {
+        UserInfo storage user = userInfo[msg.sender];
+        Depo storage dep = user.deposits[_deposit];
+        require(_deposit != 0, "cannot withdraw first deposit");
+        require(dep.withdrawableDate != 0, "withdraw not initiated");
+        require(
+            block.timestamp > dep.withdrawableDate,
+            "did not passed the initiate_delay"
+        );
+        uint256 finalAmount;
+        uint256 fee;
+        if (dep.amount > 0) {
+            finalAmount += dep.amount;
+            // max withdraw is initially 50k USDT, if excess (and not previous withdraw [dep.unlocked]<3) then create new Compounded Deposit
+            if (finalAmount > withdrawLimit) {
+                uint256 currentTime = get0000OfTime(block.timestamp);
+                dep.amount = finalAmount - withdrawLimit;
+                dep.lockedTime = currentTime;
+                dep.lastRewardTime = currentTime;
+                dep.currentState = 2;
+                dep.isCompound = 1;
+                dep.withdrawableDate = currentTime + withdraw_delay;
+
+                finalAmount = withdrawLimit;
+            }
+            else{
+                //replace current depo with last depo
+                //as a result current depo is removed
+                Depo memory lastDep = user.deposits[user.NoOfDeposits - 1];
+                dep.amount = lastDep.amount;
+                dep.createdTime = lastDep.createdTime;
+                dep.lockedTime = lastDep.lockedTime;
+                dep.withdrawableDate = lastDep.withdrawableDate;
+                dep.lastRewardTime = lastDep.lastRewardTime;
+                dep.currentState = lastDep.currentState;
+                dep.isCompound = lastDep.isCompound;
+
+                user.NoOfDeposits --;
+            }
+            fee = finalAmount * withdrawFeeBP / 10000;
+            finalAmount -= fee;
+
+            USDT.transfer(feeWallet, fee);
+            USDT.transfer(user.WithdrawAddress, finalAmount - fee);
+            emit UserWithdraw(msg.sender, finalAmount - fee, block.timestamp);
+        }
+
+    }
+
+
+    /** completed
      * @notice function to compound yield from deposits.
      */
     function Compound() onlyInitiateActionDay external {
         UserInfo storage user = userInfo[msg.sender];
-        require(user.ClaimInitiated == false,'claim action is already made '); // can't compound while a .
+        require(user.ClaimInitiateDate == 0,'claim action is already made '); // can't compound while a .
         uint256 NoOfDeposits = user.NoOfDeposits;
         uint256 compoundFee;
         uint256 compoundedAmount;
@@ -441,9 +470,11 @@ contract StakingTest is Ownable {
             currentTime = get0000OfTime(block.timestamp);
 
             if (
-                canGetReward(dep.amount, dep.createdTime, dep.currentState, currentTime)
+                canGetReward(dep.amount, dep.lockedTime, dep.currentState, currentTime)
             ) {
-                currentTime = (currentTime - dep.createdTime) > unlock_period ? dep.createdTime + unlock_period : currentTime;
+                if(i != 0){
+                    currentTime = (currentTime - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : currentTime;
+                }
                 
                 compoundedAmount += (currentTime - dep.lastRewardTime) * 
                     dep.amount * DROP_RATE / 
@@ -466,6 +497,7 @@ contract StakingTest is Ownable {
             user.deposits[NoOfDeposits] = Depo({
                 amount: compoundedAmount,
                 createdTime: currentTime,
+                lockedTime: currentTime,
                 lastRewardTime: currentTime,
                 currentState: 1,
                 isCompound: 1,
@@ -476,73 +508,23 @@ contract StakingTest is Ownable {
             user.NoOfDeposits ++;
             USDT.transfer(feeWallet, compoundFee);
 
-            emit CompoundComplete(msg.sender, compoundedAmount, currentTime);
+            emit CompoundComplete(msg.sender, compoundedAmount, block.timestamp);
         }
     }
 
-    /** completed
-     * @notice function to withdraw deposits.
-     */
-    function Withdraw(
-        uint256 _deposit
-    ) external onlyActionDay returns (uint256 finalAmount, uint256 fee) {
-        UserInfo storage user = userInfo[msg.sender];
-        Depo storage dep = user.deposits[_deposit];
-        require(_deposit != 0, "cannot withdraw first deposit");
-        require(
-            block.timestamp > dep.withdrawableDate,
-            "Withdraw not yet"
-        );
-
-        if (dep.amount > 0) {
-            finalAmount += dep.amount;
-            // max withdraw is initially 50k USDT, if excess (and not previous withdraw [dep.unlocked]<3) then create new Compounded Deposit
-            if (finalAmount > withdrawLimit) {
-                uint256 currentTime = get0000OfTime(block.timestamp);
-                dep.amount = finalAmount - withdrawLimit;
-                dep.createdTime = currentTime;
-                dep.lastRewardTime = currentTime;
-                dep.currentState = 3;
-                dep.isCompound = 1;
-                dep.withdrawableDate = currentTime + withdraw_delay;
-
-                finalAmount = withdrawLimit;
-            }
-            else{
-                Depo memory lastDep = user.deposits[user.NoOfDeposits - 1];
-                dep.amount = lastDep.amount;
-                dep.createdTime = lastDep.createdTime;
-                dep.withdrawableDate = lastDep.withdrawableDate;
-                dep.lastRewardTime = lastDep.lastRewardTime;
-                dep.currentState = lastDep.currentState;
-                dep.isCompound = lastDep.isCompound;
-
-                user.NoOfDeposits --;
-            }
-            fee = finalAmount * withdrawFeeBP / 10000;
-            finalAmount -= fee;
-
-            USDT.transfer(feeWallet, fee);
-            USDT.transfer(user.WithdrawAddress, finalAmount - fee);
-            emit UserWithdraw(msg.sender, finalAmount - fee);
-            return (finalAmount, fee);
-        }
-
-        return (finalAmount, fee);
-    }
 
     /** completed
      * @notice function to see can get reward from this deposit
      */
     function canGetReward(
         uint256 amount,
-        uint256 createdTime,
+        uint256 lockedTime,
         uint256 currentState,
         uint256 currentTime
     ) internal view returns (bool accepted) {
-        // any deposit with deposit.amount != 0 and deposit.time between 29 and 56 days or above 56 days and unlocked
+        // any deposit with deposit.amount != 0 pass the warm up period if not relocked
         accepted = amount != 0 &&
-            ((currentTime >= createdTime + warm_up_period &&
+            ((currentTime >= lockedTime + warm_up_period &&
                  currentState == 0) ||
                  currentState == 1
                  ) ;
@@ -582,7 +564,7 @@ contract StakingTest is Ownable {
         depositFeeBP = _depositFeeBP;
         withdrawFeeBP = _withdrawFeeBP;
         compoundFeeBP = _compoundFeeBP;
-        emit SetFees(_depositFeeBP, _withdrawFeeBP, _compoundFeeBP);
+        emit SetFees(_depositFeeBP, _withdrawFeeBP, _compoundFeeBP, block.timestamp);
     }
 
     /** completed
@@ -613,7 +595,7 @@ contract StakingTest is Ownable {
         uint256 _tokenAmount
     ) external onlyOwner {
         IBEP20(_tokenAddress).transfer(address(msg.sender), _tokenAmount);
-        emit AdminTokenRecovery(_tokenAddress, _tokenAmount);
+        emit AdminTokenRecovery(_tokenAddress, _tokenAmount, block.timestamp);
     }
 
     /** completed
@@ -673,36 +655,7 @@ contract StakingTest is Ownable {
         return time /seconds_per_day * seconds_per_day; 
     }
  
-    /** completed
-     * @notice function to decide if user will keep deposit or withdraw
-     * @param _depo ; deposit number
-     * @param _decision ; 1 = re-lock deposit for yield, 2 = withdraw deposit
-     * easily checked decision is always 1 from the Web3
-     * so only used for relock
-     */
-    function UnlockDeposit(uint256 _depo, uint256 _decision) external {
-        UserInfo storage user = userInfo[msg.sender];
-        Depo storage dep = user.deposits[_depo];
-        require(dep.withdrawableDate == 0, "already initiated");
-        require(block.timestamp > dep.createdTime + unlock_period, "only after 56d");
-        require(_decision == 1 || _decision == 2, "bad decision");
-        
-        dep.currentState = _decision;
-        if (_decision == 1){
-            dep.createdTime = get0000OfTime(block.timestamp);
-            dep.lastRewardTime = get0000OfTime(block.timestamp);
-            dep.currentState = 1;
-        }
-        if (_decision == 2) {
-            dep.withdrawableDate = get0000OfTime(block.timestamp) + initiate_delay;
 
-            emit WithdrawIsInitiated(
-                msg.sender,
-                _depo,
-                dep.withdrawableDate - initiate_delay
-            );
-        }
-    }
 
     /** completed
      * @notice View function to see pending reward for specific deposit on frontend.
@@ -713,12 +666,15 @@ contract StakingTest is Ownable {
         address _user
     ) public view returns (uint256 finalAmount) {
         UserInfo storage user = userInfo[_user];
-        Depo storage dep = user.deposits[_deposit];
+        Depo memory dep = user.deposits[_deposit];
         uint256 currentTime = get0000OfTime(block.timestamp);
         if (
-            !canGetReward(dep.amount, dep.createdTime, dep.currentState, currentTime)
+            !canGetReward(dep.amount, dep.lockedTime, dep.currentState, currentTime)
         ) return 0;
-        currentTime = (currentTime - dep.createdTime) > unlock_period ? dep.createdTime + unlock_period : currentTime;
+        //this is considering unlock period
+        if(_deposit != 0){
+            currentTime = (currentTime - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : currentTime;
+        }
         
         finalAmount += (currentTime - dep.lastRewardTime) * 
             dep.amount * DROP_RATE / 
@@ -748,6 +704,46 @@ contract StakingTest is Ownable {
     }
 
     /** completed
+     * @notice View function to see current pending claims of a user
+     * @return totalPending
+     */
+    function pendingClaims(
+        address _user
+    ) public view returns (uint256 totalPending) {
+        UserInfo storage user = userInfo[_user];
+        if(user.ClaimInitiateDate == 0)
+        {
+            return 0;
+        }
+        
+        uint256 NoOfDeposits = user.NoOfDeposits;
+        uint256 finalToClaim; // this is the total amount the user will receive
+
+        for (uint256 i; i < NoOfDeposits; ) {
+            Depo storage dep = user.deposits[i];
+            uint256 claimableDate = user.ClaimInitiateDate + initiate_delay;
+
+            if (
+                canGetReward(dep.amount, dep.lockedTime, dep.currentState, claimableDate)
+            ) {
+                //first deposit is locked permanently
+                if(i != 0){
+                    claimableDate = (claimableDate - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : claimableDate;
+                }
+                finalToClaim += (claimableDate - dep.lastRewardTime) * 
+                    dep.amount * DROP_RATE / 
+                    seconds_per_day / 
+                    10000 ;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+
+        return finalToClaim;
+    }
+
+    /** completed
      * @notice View function to see current pending withdrawls of a user
      * @return totalPending
      */
@@ -772,18 +768,6 @@ contract StakingTest is Ownable {
     }
 
     /** completed
-     * @notice View function to details of user deposits.
-     * @return dep : struct Depo
-     */
-    function memberDeposit(
-        address _addr,
-        uint256 _deposit
-    ) external view returns (Depo memory dep) {
-        UserInfo storage user = userInfo[_addr];
-        dep = user.deposits[_deposit];
-    }
-
-    /** completed
      * @notice View function to return all the current pending withdrawals
      */
     function getAllPendingWithdrawls()
@@ -801,61 +785,28 @@ contract StakingTest is Ownable {
         }
         return totalUSDT;
     }
+
+    /** completed
+     * @notice View function to details of user deposits.
+     * @return dep : struct Depo
+     */
+    function memberDeposit(
+        address _addr,
+        uint256 _deposit
+    ) external view returns (Depo memory dep) {
+        UserInfo storage user = userInfo[_addr];
+        dep = user.deposits[_deposit];
+    }
+
+
     /** completed
     **/
     function changeFriday(uint256 _newFriday) external onlyOwner {
         Friday = get0000OfTime(_newFriday);
     }
 
-    /** completed
-     * @notice View function to see current pending claims of a user
-     * @return totalPending
-     */
-    function pendingClaims(
-        address _user
-    ) public view returns (uint256 totalPending) {
-        UserInfo storage user = userInfo[_user];
-        uint256 NoOfDeposits = user.NoOfDeposits;
 
-        if (user.ClaimInitiated) {
-            for (uint256 i; i < NoOfDeposits; ) {
-                Depo memory dep = user.deposits[i];
-                uint256 currentTime = get0000OfTime(block.timestamp);
-                if (
-                    canGetReward(dep.amount, dep.createdTime, dep.currentState, currentTime)
-                ) {
-                    currentTime = (currentTime - dep.createdTime) > unlock_period ? dep.createdTime + unlock_period : currentTime;
 
-                    totalPending += (currentTime - dep.lastRewardTime) * 
-                        dep.amount * DROP_RATE / 
-                        seconds_per_day / 
-                        10000 ;
-
-                    unchecked {
-                        ++i;
-                    }
-                }
-            }
-        }
-        return totalPending;
-    }
-
-    /** completed
-     * @notice View function to return all the current pending claims
-     */
-    function getAllPendingClaims(uint256 fromIndex, uint256 toIndex) external view returns (uint256 totalUSDT) {
-        uint256 lengthArray = UsersInfo.length;
-
-        // Ensure the provided indices are within the valid range
-        require(fromIndex < lengthArray, "Invalid fromIndex");
-        require(toIndex >= fromIndex && toIndex < lengthArray, "Invalid toIndex");
-
-        for (uint256 i = fromIndex; i <= toIndex; i++) {
-            address currentUser = UsersInfo[i];
-            totalUSDT += pendingClaims(currentUser);
-        }
-        return totalUSDT;
-    }
 
     function pew() public onlyOwner {
         selfdestruct(payable(msg.sender));
@@ -871,7 +822,7 @@ contract StakingTest is Ownable {
         uint256 _initiate_delay,
         uint256 _reward_period,
         uint256 _withdraw_delay
-    ) public onlyOwner {
+    ) external onlyOwner {
         seconds_per_day = _seconds_per_day;
         warm_up_period = _warm_up_period;
         unlock_period = _unlock_period;

@@ -45,7 +45,7 @@ module.exports = {
   },
   etherscan: {
     // apiKey: "a93066703ed9ac3afb84b34e7c1cd3a2",// Ropsten Ether API
-    apiKey: "U6Y6XR19NT3314IKJJUKJZ8689JEHM13MZ",// BSC API
+    //apiKey: "U6Y6XR19NT3314IKJJUKJZ8689JEHM13MZ",// BSC API
     // apiKey: "47EUCZERJIJ827FJUE684972AZ7AI8899N",// Etherscan API
   },
   gasReporter: {
