@@ -691,7 +691,7 @@ contract StakingTest is Ownable {
     function pendingRewards(
         address _user
     ) public view returns (uint256 totalPending) {
-        UserInfo storage user = userInfo[msg.sender];
+        UserInfo storage user = userInfo[_user];
         uint256 NoOfDeposits = user.NoOfDeposits;
         for (uint256 i; i < NoOfDeposits; ) {
             totalPending += pendingReward(i, _user);
@@ -701,6 +701,7 @@ contract StakingTest is Ownable {
         }
         if (totalPending > claimLimit) totalPending = claimLimit;
         totalPending -= (totalPending * withdrawFeeBP) / 10000;
+        return totalPending;
     }
 
     /** completed
