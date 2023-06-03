@@ -699,8 +699,6 @@ contract StakingTest is Ownable {
                 ++i;
             }
         }
-        if (totalPending > claimLimit) totalPending = claimLimit;
-        totalPending -= (totalPending * withdrawFeeBP) / 10000;
         return totalPending;
     }
 
@@ -741,6 +739,8 @@ contract StakingTest is Ownable {
             }
         }
 
+        if (finalToClaim > claimLimit) finalToClaim = claimLimit;
+        finalToClaim -= (finalToClaim * withdrawFeeBP) / 10000;
         return finalToClaim;
     }
 

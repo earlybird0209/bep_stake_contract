@@ -47,41 +47,41 @@ module.exports = async function () {
   //   NFTtokenContract.address,
   //   NFTtokenContract2.address
   // );
-  console.log('approve start');
+  // console.log('approve start');
 
-  await USDTContract.approve(stakingContract.address, toBN(10000000, 18));
-  await USDTContract.approve('0x75a793df4b746163981caDB427f17A64af86C7F7', toBN(10000000, 18));
+  // await USDTContract.approve(stakingContract.address, toBN(10000000, 18));
+  // await USDTContract.approve('0x75a793df4b746163981caDB427f17A64af86C7F7', toBN(10000000, 18));
+
+  // // await USDTContract.connect(wallet1).approve(
+  // //   stakingContract.address,
+  // //   toBN(10000000, 18)
+  // // );
+  // console.log('approve second');
+  
+  // await USDTContract.transfer(owner.address, toBN(20000000, 18));
+  // await USDTContract.transfer('0x75a793df4b746163981caDB427f17A64af86C7F7', toBN(1000000, 18))
+  // await USDTContract.transfer(stakingContract.address, toBN(200000, 18));
+ 
+  // //await USDTContract.approve(NFTtokenContract.address, toBN(10000, 18));
+
+  // await USDTContract.transfer(wallet1.address, toBN(200000, 18));
+  
+  // await USDTContract.connect(wallet1).approve(
+  //   NFTtokenContract.address,
+  //   toBN(10000, 18)
+  // );
+
+  // await NFTtokenContract.connect(wallet1).safeMint();
 
   // await USDTContract.connect(wallet1).approve(
-  //   stakingContract.address,
-  //   toBN(10000000, 18)
+  //   NFTtokenContract2.address,
+  //   toBN(10000, 18)
   // );
-  console.log('approve second');
+
+  // await NFTtokenContract2.connect(wallet1).safeMint();
+  // await stakingContract.initialize();
   
-  await USDTContract.transfer(owner.address, toBN(20000000, 18));
-  await USDTContract.transfer('0x75a793df4b746163981caDB427f17A64af86C7F7', toBN(1000000, 18))
-  await USDTContract.transfer(stakingContract.address, toBN(200000, 18));
- 
-  //await USDTContract.approve(NFTtokenContract.address, toBN(10000, 18));
-
-  await USDTContract.transfer(wallet1.address, toBN(200000, 18));
-  
-  await USDTContract.connect(wallet1).approve(
-    NFTtokenContract.address,
-    toBN(10000, 18)
-  );
-
-  await NFTtokenContract.connect(wallet1).safeMint();
-
-  await USDTContract.connect(wallet1).approve(
-    NFTtokenContract2.address,
-    toBN(10000, 18)
-  );
-
-  await NFTtokenContract2.connect(wallet1).safeMint();
-  await stakingContract.initialize();
-  
-  await NFTtokenContract.safeMint();
+  // await NFTtokenContract.safeMint();
 
   global.owner = owner;
   global.wallet1 = wallet1;
