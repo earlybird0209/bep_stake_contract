@@ -323,6 +323,7 @@ contract StakingTest is Ownable {
     function Claim() external {
         UserInfo storage user = userInfo[msg.sender];
         require(user.ClaimInitiateDate != 0 , "No claim initiated");
+        require(getDifferenceFromActionDay(block.timestamp) != 0, "initiate day");
         require(block.timestamp > user.ClaimInitiateDate + initiate_delay , "did not passed initiate delay");
 
         uint256 NoOfDeposits = user.NoOfDeposits;
@@ -394,7 +395,7 @@ contract StakingTest is Ownable {
         require(dep.currentState == 0 || dep.currentState == 1, "deposit withdrawn"); // you cannot withdraw if you haven't first relocked your deposit
         require(dep.withdrawableDate == 0, "already initiated");
 
-        dep.withdrawableDate = get0000OfTime(block.timestamp) + initiate_delay;
+        dep.withdrawableDate = get0000OfTime(block.timestamp) + warm_up_period;
         dep.currentState = 2;
         emit WithdrawIsInitiated(
             msg.sender,
