@@ -18,25 +18,30 @@ module.exports = async function () {
   const USDT = await ethers.getContractFactory("BEP20USDT");
   const Staking = await ethers.getContractFactory("StakingTest");
   global.USDTContract = USDT.attach('0x5dCD3cdaD224b794Cd2516762A64731EE5c2e2bA');
-  global.NFTtokenContract = Token.attach('0x41d87e182De21b7E670b2ceE78a1dc21e433058d');
-  global.NFTtokenContract2 = Token.attach('0xF929Ab2632265ad705dAC1743cd3Ec38aE5cF151');
-  global.NFTtokenContract3 = Token.attach('0x260DB4191A3eAbA56044290dCB4bfBb6F98E3D06');
+  // global.NFTtokenContract = Token.attach('0x41d87e182De21b7E670b2ceE78a1dc21e433058d');
+  // global.NFTtokenContract2 = Token.attach('0xF929Ab2632265ad705dAC1743cd3Ec38aE5cF151');
+  // global.NFTtokenContract3 = Token.attach('0x260DB4191A3eAbA56044290dCB4bfBb6F98E3D06');
     // global.USDTContract = await USDT.deploy();
 
-    //global.NFTtokenContract = await Token.deploy(global.USDTContract.address);
-    // global.NFTtokenContract2 = await Token.deploy(global.USDTContract.address);
+    global.NFTtokenContract = await Token.deploy(global.USDTContract.address);
+    global.NFTtokenContract2 = await Token.deploy(global.USDTContract.address);
+    global.NFTtokenContract3 = await Token.deploy(global.USDTContract.address);
   //   global.stakingContract = await Staking.deploy(
   //     global.NFTtokenContract.address,
   //     global.NFTtokenContract2.address,
   //     global.USDTContract.address
   // );
   global.stakingContract = await Staking.deploy(
-    '0x41d87e182De21b7E670b2ceE78a1dc21e433058d',
-    '0xF929Ab2632265ad705dAC1743cd3Ec38aE5cF151',
-    '0x260DB4191A3eAbA56044290dCB4bfBb6F98E3D06',
+    global.NFTtokenContract.address,
+    global.NFTtokenContract2.address,
+    global.NFTtokenContract3.address,
     '0x5dCD3cdaD224b794Cd2516762A64731EE5c2e2bA'
 );
   console.log('deployed');
+  console.log(global.NFTtokenContract.address);
+  console.log(global.NFTtokenContract2.address);
+  console.log(global.NFTtokenContract3.address);
+  console.log(global.stakingContract.address);
 
   const [
     owner,

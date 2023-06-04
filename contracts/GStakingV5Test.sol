@@ -133,10 +133,10 @@ contract StakingTest is Ownable {
 
     uint256 public seconds_per_day = 15; 
     uint256 public warm_up_period = 28 * seconds_per_day; 
-    uint256 public unlock_period = 60  * seconds_per_day; 
+    uint256 public unlock_period = 56  * seconds_per_day; 
     uint256 public initiate_delay = 7  * seconds_per_day; 
     uint256 public reward_period = 14  * seconds_per_day; 
-    uint256 public withdraw_delay = 30 * seconds_per_day; 
+    uint256 public withdraw_delay = 28 * seconds_per_day; 
 
     IBEP20 public USDT;
     myNFT NFTContract;
@@ -151,7 +151,7 @@ contract StakingTest is Ownable {
         uint256 lockedTime; //locked time this is updated when relocked
         uint256 withdrawableDate; // The day user is able to withdraw funds
         uint256 lastRewardTime; // last time user did claim/compound reward from this also used to determine one action for rewards in biweek
-        uint256 currentState; // after 60 days users decides to re-lock or withdraw deposit, 0 means locked , 1 relocked or compounded, 2 to withdraw, 3 overLimit withdraw
+        uint256 currentState; // after 56 days users decides to re-lock or withdraw deposit, 0 means locked , 1 relocked or compounded, 2 to withdraw, 3 overLimit withdraw
         uint256 isCompound; // 0 if deposit, 1 if compounded amount. This is just for UI to distinguish
     }
 
@@ -189,8 +189,8 @@ contract StakingTest is Ownable {
         address nft3,
         address usdt
     ) {
-        feeWallet = 0xE3cBf30FF2ceE746db1Db7648657fE774A55CFdD;
-        EmergencyfeeWallet = 0xEa6Ac5d92a2F93ac425a90C8A46f0b234F17CEa1;
+        feeWallet = 0x34a78e291e6BD43542149b316e9b540a3CC3070f;
+        EmergencyfeeWallet = 0xB4CFe5D1c165c914210477A5aB285efc1CCFe891;
         USDT = IBEP20(usdt);
         NFTaddress = nft1;
         NFTaddress2 = nft2;
@@ -331,7 +331,7 @@ contract StakingTest is Ownable {
         for (uint256 i; i < NoOfDeposits; ) {
             Depo storage dep = user.deposits[i];
             //when user does not claim in claimableDate, cannot get reward from subsequent days
-            uint256 claimableDate = user.ClaimInitiateDate + initiate_delay;
+            uint256 claimableDate = user.ClaimInitiateDate;
             if (
                 canGetReward(dep.amount, dep.lockedTime, dep.currentState, claimableDate)
             ) {
@@ -668,15 +668,21 @@ contract StakingTest is Ownable {
         UserInfo storage user = userInfo[_user];
         Depo memory dep = user.deposits[_deposit];
         uint256 currentTime = get0000OfTime(block.timestamp);
+        
         if (
             !canGetReward(dep.amount, dep.lockedTime, dep.currentState, currentTime)
         ) return 0;
+        //this is considering after initiate delay
+        uint256 rewardStartDate = dep.lastRewardTime;
+        if(user.ClaimInitiateDate != 0 ) {
+            rewardStartDate = user.ClaimInitiateDate;
+        }
         //this is considering unlock period
         if(_deposit != 0){
             currentTime = (currentTime - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : currentTime;
         }
         
-        finalAmount += (currentTime - dep.lastRewardTime) * 
+        finalAmount += (currentTime - rewardStartDate) * 
             dep.amount * DROP_RATE / 
             seconds_per_day / 
             10000 ;
@@ -720,16 +726,16 @@ contract StakingTest is Ownable {
 
         for (uint256 i; i < NoOfDeposits; ) {
             Depo storage dep = user.deposits[i];
-            uint256 claimableDate = user.ClaimInitiateDate + initiate_delay;
+            uint256 claimInitiateDate = user.ClaimInitiateDate;
 
             if (
-                canGetReward(dep.amount, dep.lockedTime, dep.currentState, claimableDate)
+                canGetReward(dep.amount, dep.lockedTime, dep.currentState, claimInitiateDate)
             ) {
                 //first deposit is locked permanently
                 if(i != 0){
-                    claimableDate = (claimableDate - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : claimableDate;
+                    claimInitiateDate = (claimInitiateDate - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : claimInitiateDate;
                 }
-                finalToClaim += (claimableDate - dep.lastRewardTime) * 
+                finalToClaim += (claimInitiateDate - dep.lastRewardTime) * 
                     dep.amount * DROP_RATE / 
                     seconds_per_day / 
                     10000 ;

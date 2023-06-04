@@ -31,7 +31,7 @@ contract MyToken is ERC721, Pausable, Ownable {
         bool success = IERC20(USDT).transferFrom(
             msg.sender,
             address(this),
-            1000 * 10 ** 18
+            350 * 10 ** 18
         );
         require(success);
         uint256 tokenId = _tokenIdCounter.current();
