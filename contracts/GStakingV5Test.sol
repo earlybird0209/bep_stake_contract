@@ -524,7 +524,7 @@ contract StakingTest is Ownable {
     ) internal view returns (bool accepted) {
         // any deposit with deposit.amount != 0 pass the warm up period if not relocked
         accepted = amount != 0 &&
-            ((currentTime >= lockedTime + warm_up_period &&
+            ((currentTime >= getComingActionDay(lockedTime + warm_up_period) &&
                  currentState == 0) ||
                  currentState == 1
                  ) ;
