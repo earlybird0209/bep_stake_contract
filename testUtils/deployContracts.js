@@ -18,14 +18,14 @@ module.exports = async function () {
   const USDT = await ethers.getContractFactory("BEP20USDT");
   const Staking = await ethers.getContractFactory("StakingTest");
   global.USDTContract = USDT.attach('0x5dCD3cdaD224b794Cd2516762A64731EE5c2e2bA');
-  // global.NFTtokenContract = Token.attach('0x41d87e182De21b7E670b2ceE78a1dc21e433058d');
-  // global.NFTtokenContract2 = Token.attach('0xF929Ab2632265ad705dAC1743cd3Ec38aE5cF151');
-  // global.NFTtokenContract3 = Token.attach('0x260DB4191A3eAbA56044290dCB4bfBb6F98E3D06');
+  global.NFTtokenContract = Token.attach('0xE12ae70329C83C23526C0D393B5Fe5eB58396B52');
+  global.NFTtokenContract2 = Token.attach('0xae4DDb3e87B51Eca1fcDdf975aF12d1E04c4EEdB');
+  global.NFTtokenContract3 = Token.attach('0x3FfCdbAf15FB13626f33Fd2b311EB71db53468c2');
     // global.USDTContract = await USDT.deploy();
 
-    global.NFTtokenContract = await Token.deploy(global.USDTContract.address);
-    global.NFTtokenContract2 = await Token.deploy(global.USDTContract.address);
-    global.NFTtokenContract3 = await Token.deploy(global.USDTContract.address);
+    // global.NFTtokenContract = await Token.deploy(global.USDTContract.address);
+    // global.NFTtokenContract2 = await Token.deploy(global.USDTContract.address);
+    // global.NFTtokenContract3 = await Token.deploy(global.USDTContract.address);
   //   global.stakingContract = await Staking.deploy(
   //     global.NFTtokenContract.address,
   //     global.NFTtokenContract2.address,
@@ -35,12 +35,12 @@ module.exports = async function () {
     global.NFTtokenContract.address,
     global.NFTtokenContract2.address,
     global.NFTtokenContract3.address,
-    '0x5dCD3cdaD224b794Cd2516762A64731EE5c2e2bA'
+    global.USDTContract.address
 );
   console.log('deployed');
-  console.log(global.NFTtokenContract.address);
-  console.log(global.NFTtokenContract2.address);
-  console.log(global.NFTtokenContract3.address);
+  // console.log(global.NFTtokenContract.address);
+  // console.log(global.NFTtokenContract2.address);
+  // console.log(global.NFTtokenContract3.address);
   console.log(global.stakingContract.address);
 
   const [

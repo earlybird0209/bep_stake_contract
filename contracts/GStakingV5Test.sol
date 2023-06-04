@@ -330,20 +330,22 @@ contract StakingTest is Ownable {
 
         for (uint256 i; i < NoOfDeposits; ) {
             Depo storage dep = user.deposits[i];
-            //when user does not claim in claimableDate, cannot get reward from subsequent days
-            uint256 claimableDate = user.ClaimInitiateDate;
+            uint256 claimInitateDate = user.ClaimInitiateDate;
             if (
-                canGetReward(dep.amount, dep.lockedTime, dep.currentState, claimableDate)
+                canGetReward(dep.amount, dep.lockedTime, dep.currentState, claimInitateDate)
             ) {
                 //first deposit is locked permanently
                 if(i != 0){
-                    claimableDate = (claimableDate - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : claimableDate;
+                    claimInitateDate = (claimInitateDate - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : claimInitateDate;
                 }
-                finalToClaim += (claimableDate - dep.lastRewardTime) * 
+                if(claimInitateDate < dep.lastRewardTime){
+                    continue;
+                }
+                finalToClaim += (claimInitateDate - dep.lastRewardTime) * 
                     dep.amount * DROP_RATE / 
                     seconds_per_day / 
                     10000 ;
-                dep.lastRewardTime = claimableDate;
+                dep.lastRewardTime = claimInitateDate;
             }
             unchecked {
                 ++i;
@@ -524,7 +526,7 @@ contract StakingTest is Ownable {
     ) internal view returns (bool accepted) {
         // any deposit with deposit.amount != 0 pass the warm up period if not relocked
         accepted = amount != 0 &&
-            ((currentTime >= getComingActionDay(lockedTime + warm_up_period) &&
+            ((currentTime >= (lockedTime + warm_up_period) &&
                  currentState == 0) ||
                  currentState == 1
                  ) ;
@@ -678,9 +680,14 @@ contract StakingTest is Ownable {
             rewardStartDate = user.ClaimInitiateDate;
         }
         //this is considering unlock period
-        if(_deposit != 0){
-            currentTime = (currentTime - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : currentTime;
+        if(_deposit != 0 && (currentTime - dep.lockedTime) > unlock_period){
+            currentTime = dep.lockedTime + unlock_period;
         }
+        //this is true when dep.lastRewardTime > block.timestamp or user.ClaimInitiateDate > dep.lockedTime + unlock_period
+        if(currentTime < rewardStartDate){
+            return 0;
+        }
+
         
         finalAmount += (currentTime - rewardStartDate) * 
             dep.amount * DROP_RATE / 
@@ -732,8 +739,12 @@ contract StakingTest is Ownable {
                 canGetReward(dep.amount, dep.lockedTime, dep.currentState, claimInitiateDate)
             ) {
                 //first deposit is locked permanently
-                if(i != 0){
-                    claimInitiateDate = (claimInitiateDate - dep.lockedTime) > unlock_period ? dep.lockedTime + unlock_period : claimInitiateDate;
+                if(i != 0 && (claimInitiateDate - dep.lockedTime) > unlock_period){
+                    claimInitiateDate = dep.lockedTime + unlock_period;
+                }
+                //this is true when user.ClaimInitiateDate < dep.lastRewardTime
+                if(claimInitiateDate < dep.lastRewardTime){
+                    continue;
                 }
                 finalToClaim += (claimInitiateDate - dep.lastRewardTime) * 
                     dep.amount * DROP_RATE / 
