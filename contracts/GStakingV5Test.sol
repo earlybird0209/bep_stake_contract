@@ -323,7 +323,7 @@ contract StakingTest is Ownable {
                         dep.amount * DROP_RATE / 
                         seconds_per_day / 
                         10000 ;
-                    dep.lastRewardTime = claimInitateDate;
+                    dep.lastRewardTime = user.ClaimInitiateDate;
                 }
             }
             unchecked {
@@ -461,7 +461,7 @@ contract StakingTest is Ownable {
                         seconds_per_day / 
                         10000 ;
                         
-                    dep.lastRewardTime = currentTime;
+                    dep.lastRewardTime = today;
                 }
             }
             unchecked {
