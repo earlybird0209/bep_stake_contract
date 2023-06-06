@@ -148,7 +148,7 @@ contract StakingTest is Ownable {
     struct Depo {
         uint256 amount; //deposit amount
         uint256 createdTime; //deposit time
-        uint256 lockedTime; //locked time this is updated when relocked
+        uint256 lockedTime; //locked time this is updated when relocked the same as reward start time
         uint256 withdrawableDate; // The day user is able to withdraw funds
         uint256 lastRewardTime; // last time user did claim/compound reward from this also used to determine one action for rewards in biweek
         uint256 currentState; // after 56 days users decides to re-lock or withdraw deposit, 0 means locked , 1 relocked, 2 compounded, 3 to withdraw
@@ -653,11 +653,7 @@ contract StakingTest is Ownable {
         uint256 currentTime
     ) internal view returns (bool accepted) {
         // any deposit with deposit.amount != 0 pass the warm up period if not relocked
-        accepted = amount != 0 &&
-            (
-                (currentTime >= (lockedTime + warm_up_period) && currentState == 0)
-                || (currentTime >= lockedTime && (currentState == 1 || currentState == 2))
-            ) ;
+        accepted = amount != 0 && currentTime > lockedTime && currentState != 3;
     }
 
     
