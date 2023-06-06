@@ -160,6 +160,8 @@ contract StakingTest is Ownable {
         address WithdrawAddress; //by default msg.sender, can change with changeWithdrawalAddress()
         uint256 ClaimInitiateDate; // claim initiated date
         uint256 LastCompoundDate; // compound date
+        uint256 PendingClaim;   // when user initiate claim
+        uint256 AdditionalReward;   // when user relock or initiate withdraw store its reward
     }
 
     address[] public UsersInfo;
@@ -243,14 +245,11 @@ contract StakingTest is Ownable {
             user.WithdrawAddress = msg.sender;
         }
 
-        user.deposits[user.NoOfDeposits] = Depo({
-            amount: _amount - depositFee,
-            createdTime: getToday(block.timestamp),
-            lockedTime: getComingActionDay(block.timestamp + warm_up_period),
-            lastRewardTime: getComingActionDay(block.timestamp + warm_up_period),
-            currentState: 0,
-            withdrawableDate: 0
-        });
+        Depo storage dep = user.deposits[user.NoOfDeposits];
+        dep.amount = _amount - depositFee;
+        dep.createdTime = getToday(block.timestamp);
+        dep.lockedTime = getComingActionDay(block.timestamp + warm_up_period);
+        dep.lastRewardTime = getComingActionDay(block.timestamp + warm_up_period);
 
         user.NoOfDeposits ++;
 
@@ -279,6 +278,8 @@ contract StakingTest is Ownable {
         if(dep.currentState != 2){
             dep.currentState = 1;
         }
+        //store current reward
+        user.AdditionalReward += pendingReward(_depo, msg.sender);
         dep.lockedTime = getToday(block.timestamp);
         dep.lastRewardTime = getToday(block.timestamp);
         emit RelockComplete(msg.sender, _depo, block.timestamp);
@@ -291,6 +292,22 @@ contract StakingTest is Ownable {
         uint256 today = getToday(block.timestamp);
         require(user.ClaimInitiateDate == 0,'claim action is already made '); // can't compound while a .
         require(user.LastCompoundDate < today, 'compound action is already made '); // can't compound while a .
+        //store current reward
+        uint256 totalPending;
+        uint256 NoOfDeposits = user.NoOfDeposits;
+        for (uint256 i; i < NoOfDeposits; ) {
+            Depo storage dep = user.deposits[i];
+            uint256 pending = pendingReward(i, msg.sender);
+            if(pending > 0){
+                totalPending += pending;
+                dep.lastRewardTime = today;
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        user.PendingClaim = totalPending + user.AdditionalReward;
+        user.AdditionalReward = 0;
         user.ClaimInitiateDate = today;
         emit ClaimIsInitiated(msg.sender, block.timestamp);
     }
@@ -304,52 +321,30 @@ contract StakingTest is Ownable {
         require(block.timestamp > user.ClaimInitiateDate + initiate_delay , "did not passed initiate delay");
         require(getToday(block.timestamp) != getLastActionDay(block.timestamp), "should not be action day");
 
-        uint256 NoOfDeposits = user.NoOfDeposits;
-        uint256 finalToClaim; // this is the total amount the user will receive
-        for (uint256 i; i < NoOfDeposits; ) {
-            Depo storage dep = user.deposits[i];
-            uint256 claimInitateDate = user.ClaimInitiateDate;
-            if (
-                hasPassedWarmupPeriod(dep.amount, dep.lockedTime, dep.currentState, claimInitateDate)
-            ) {
-                // and can get only reward before unlocked
-                if((claimInitateDate > dep.lockedTime + unlock_period)){
-                    claimInitateDate = dep.lockedTime + unlock_period;
-                }
-                if(claimInitateDate > dep.lastRewardTime){
-                    finalToClaim += (claimInitateDate - dep.lastRewardTime) * 
-                        dep.amount * DROP_RATE / 
-                        seconds_per_day / 
-                        10000 ;
-                    dep.lastRewardTime = user.ClaimInitiateDate;
-                }
-            }
-            unchecked {
-                ++i;
-            }
-        }
         uint256 currentTime = getToday(block.timestamp);
+        uint256 finalToClaim = user.PendingClaim; // this is the total amount the user will receive
+        uint256 NoOfDeposits = user.NoOfDeposits;
 
         // max claim is initially 10k USDT, if excess then create new Compounded Deposit
         if (finalToClaim > claimLimit) {
-            user.deposits[NoOfDeposits] = Depo({
-                amount: finalToClaim - claimLimit,
-                createdTime: currentTime,
-                lockedTime: currentTime,
-                lastRewardTime: currentTime,
-                currentState: 2,
-                withdrawableDate: 0
-            });
+            Depo storage dep = user.deposits[NoOfDeposits];
+            dep.amount = finalToClaim - claimLimit;
+            dep.createdTime = currentTime;
+            dep.lockedTime = currentTime;
+            dep.lastRewardTime = currentTime;
+            dep.currentState = 2;
 
             user.NoOfDeposits += 1;
             finalToClaim = claimLimit;
         }
         
-        uint256 claimFee = (finalToClaim * withdrawFeeBP) / 10000; // this is the total fee for all claims
-        finalToClaim -= claimFee;
 
         user.ClaimInitiateDate = 0;
+        user.PendingClaim = 0;
     
+        uint256 claimFee = finalToClaim * compoundFeeBP / 10000;
+        finalToClaim -= claimFee;
+
         USDT.transfer(feeWallet, claimFee);
         USDT.transfer(user.WithdrawAddress, finalToClaim);
     
@@ -368,6 +363,8 @@ contract StakingTest is Ownable {
         require(_deposit != 0, "first deposit cannot be withdrawn");
         require(block.timestamp > dep.lockedTime + unlock_period, "not unlocked yet");
         require(dep.withdrawableDate == 0, "already initiated");
+
+        user.AdditionalReward += pendingReward(_deposit, msg.sender);
 
         dep.withdrawableDate = getToday(block.timestamp) + reward_period;
         dep.currentState = 3;
@@ -444,33 +441,22 @@ contract StakingTest is Ownable {
         uint256 compoundedAmount; // this is the total amount the user will receive
         for (uint256 i; i < NoOfDeposits; ) {
             Depo storage dep = user.deposits[i];
-            uint256 currentTime = today;
-            if (
-                hasPassedWarmupPeriod(dep.amount, dep.lockedTime, dep.currentState, currentTime)
-            ) {
-                //first deposit is locked permanently
-                // and can get only reward before unlocked
-                if((currentTime > dep.lockedTime + unlock_period)){
-                    currentTime = dep.lockedTime + unlock_period;
-                }
-                if(currentTime > dep.lastRewardTime){
-                    compoundedAmount += (currentTime - dep.lastRewardTime) * 
-                        dep.amount * DROP_RATE / 
-                        seconds_per_day / 
-                        10000 ;
-                        
-                    dep.lastRewardTime = today;
-                }
+            uint256 pending = pendingReward(i, msg.sender);
+            if(pending > 0){
+                compoundedAmount += pending;
+                dep.lastRewardTime = today;
             }
+
             unchecked {
                 ++i;
             }
         }
+        compoundedAmount += user.AdditionalReward;
+        compoundFee = (compoundedAmount * compoundFeeBP) / 10000;
+        compoundedAmount -= compoundFee;
+        user.AdditionalReward = 0;
 
-        if ( compoundedAmount != 0 ){
-
-            compoundFee = (compoundedAmount * compoundFeeBP) / 10000;
-            compoundedAmount -= compoundFee;
+        if ( compoundedAmount != 0){
             user.deposits[NoOfDeposits] = Depo({
                 amount: compoundedAmount,
                 createdTime: today,
@@ -504,18 +490,12 @@ contract StakingTest is Ownable {
         if (
             hasPassedWarmupPeriod(dep.amount, dep.lockedTime, dep.currentState, currentTime)
         ) {
-            //first deposit is locked permanently
-            //this is considering claim initiated
-            uint256 rewardStartDate = dep.lastRewardTime;
-            if(user.ClaimInitiateDate != 0 ) {
-                rewardStartDate = user.ClaimInitiateDate;
-            }
             // and can only get reward before unlocked
             if((currentTime > dep.lockedTime + unlock_period)){
                 currentTime = dep.lockedTime + unlock_period;
             }
-            if(currentTime > rewardStartDate){
-                finalAmount += (currentTime - rewardStartDate) * 
+            if(currentTime > dep.lastRewardTime){
+                finalAmount += (currentTime - dep.lastRewardTime) * 
                     dep.amount * DROP_RATE / 
                     seconds_per_day / 
                     10000 ;
@@ -539,6 +519,8 @@ contract StakingTest is Ownable {
                 ++i;
             }
         }
+        totalPending += user.AdditionalReward;
+        
         uint256 fee = totalPending * compoundFeeBP / 10000;
         totalPending -= fee;
         return totalPending;
@@ -557,32 +539,8 @@ contract StakingTest is Ownable {
             return 0;
         }
         
-        uint256 NoOfDeposits = user.NoOfDeposits;
-        uint256 finalToClaim; // this is the total amount the user will receive
-
-        for (uint256 i; i < NoOfDeposits; ) {
-            Depo memory dep = user.deposits[i];
-            uint256 claimInitateDate = user.ClaimInitiateDate;
-            if (
-                hasPassedWarmupPeriod(dep.amount, dep.lockedTime, dep.currentState, claimInitateDate)
-            ) {
-                //first deposit is locked permanently
-                // and can get reward before unlocked
-                if((claimInitateDate > dep.lockedTime + unlock_period)){
-                    claimInitateDate = dep.lockedTime + unlock_period;
-                }
-                if(claimInitateDate > dep.lastRewardTime){
-                    finalToClaim += (claimInitateDate - dep.lastRewardTime) * 
-                        dep.amount * DROP_RATE / 
-                        seconds_per_day / 
-                        10000 ;
-                }
-            }
-            unchecked {
-                ++i;
-            }
-        }
-        uint256 fee = finalToClaim * withdrawFeeBP / 10000;
+        uint256 finalToClaim = user.PendingClaim; // this is the total amount the user will receive
+        uint256 fee = finalToClaim * compoundFeeBP / 10000;
         finalToClaim -= fee;
         return finalToClaim;
     }
