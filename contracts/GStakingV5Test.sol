@@ -124,7 +124,7 @@ contract StakingTest is Ownable {
     uint256 public claimLimit = 10000 * 10 ** 18;
     uint256 public withdrawLimit = 50000 * 10 ** 18;
     uint256 public startBlock; // The block number when USDT rewards starts.
-    uint256 public DROP_RATE = 60; //0.6 % per day
+    uint256 public DROP_RATE = 59; //0.6 % per day
 
     uint256 public Friday = 1682640000; // this is the 00:00:00 Friday of initiateAction
     address public NFTaddress; // this is the OG NFT contract address
@@ -246,7 +246,7 @@ contract StakingTest is Ownable {
         user.deposits[user.NoOfDeposits] = Depo({
             amount: _amount - depositFee,
             createdTime: getToday(block.timestamp),
-            lockedTime: getToday(block.timestamp),
+            lockedTime: getComingActionDay(block.timestamp + warm_up_period),
             lastRewardTime: getComingActionDay(block.timestamp + warm_up_period),
             currentState: 0,
             withdrawableDate: 0
@@ -264,7 +264,7 @@ contract StakingTest is Ownable {
         
 
         emit DepositComplete(msg.sender, _amount, block.timestamp);
-    }
+    }                                                                                                                     
 
     /** completed
      * @notice function to decide if user will keep deposit or withdraw
@@ -273,7 +273,6 @@ contract StakingTest is Ownable {
     function RelockDeposit(uint256 _depo) external {
         UserInfo storage user = userInfo[msg.sender];
         Depo storage dep = user.deposits[_depo];
-        require(_depo != 0, "relock is not needed for first deposit");
         require(dep.withdrawableDate == 0, "withdraw initiated");
         require(block.timestamp > dep.lockedTime + unlock_period, "only after unlock period");
         //2 is compound
@@ -313,9 +312,8 @@ contract StakingTest is Ownable {
             if (
                 hasPassedWarmupPeriod(dep.amount, dep.lockedTime, dep.currentState, claimInitateDate)
             ) {
-                //first deposit is locked permanently
                 // and can get only reward before unlocked
-                if(i != 0 && (claimInitateDate > dep.lockedTime + unlock_period)){
+                if((claimInitateDate > dep.lockedTime + unlock_period)){
                     claimInitateDate = dep.lockedTime + unlock_period;
                 }
                 if(claimInitateDate > dep.lastRewardTime){
@@ -364,7 +362,7 @@ contract StakingTest is Ownable {
      */
     function InitiateWithdrawal(
         uint256 _deposit
-    ) external onlyActionDay {
+    ) external {
         UserInfo storage user = userInfo[msg.sender];
         Depo storage dep = user.deposits[_deposit];
         require(_deposit != 0, "first deposit cannot be withdrawn");
@@ -452,7 +450,7 @@ contract StakingTest is Ownable {
             ) {
                 //first deposit is locked permanently
                 // and can get only reward before unlocked
-                if(i != 0 && (currentTime > dep.lockedTime + unlock_period)){
+                if((currentTime > dep.lockedTime + unlock_period)){
                     currentTime = dep.lockedTime + unlock_period;
                 }
                 if(currentTime > dep.lastRewardTime){
@@ -513,7 +511,7 @@ contract StakingTest is Ownable {
                 rewardStartDate = user.ClaimInitiateDate;
             }
             // and can only get reward before unlocked
-            if(_deposit != 0 && (currentTime > dep.lockedTime + unlock_period)){
+            if((currentTime > dep.lockedTime + unlock_period)){
                 currentTime = dep.lockedTime + unlock_period;
             }
             if(currentTime > rewardStartDate){
@@ -570,7 +568,7 @@ contract StakingTest is Ownable {
             ) {
                 //first deposit is locked permanently
                 // and can get reward before unlocked
-                if(i != 0 && (claimInitateDate > dep.lockedTime + unlock_period)){
+                if((claimInitateDate > dep.lockedTime + unlock_period)){
                     claimInitateDate = dep.lockedTime + unlock_period;
                 }
                 if(claimInitateDate > dep.lastRewardTime){
