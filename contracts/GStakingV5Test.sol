@@ -433,11 +433,11 @@ contract StakingTest is Ownable {
      */
     function Compound() onlyActionDay external {
         UserInfo storage user = userInfo[msg.sender];
-        require(user.ClaimInitiateDate == 0,'claim action is already made '); // can't compound while a .
-        require(user.LastCompoundDate < getToday(block.timestamp), 'compound action is already made '); // can't compound while a .
+        uint256 today = getToday(block.timestamp);
+        require(user.ClaimInitiateDate < today,'claim action is already made '); // can't compound while a .
+        require(user.LastCompoundDate < today, 'compound action is already made '); // can't compound while a .
         uint256 NoOfDeposits = user.NoOfDeposits;
         uint256 compoundFee;
-        uint256 today = getToday(block.timestamp);
 
         uint256 compoundedAmount; // this is the total amount the user will receive
         for (uint256 i; i < NoOfDeposits; ) {
