@@ -245,11 +245,15 @@ contract StakingTest is Ownable {
             user.WithdrawAddress = msg.sender;
         }
 
-        Depo storage dep = user.deposits[user.NoOfDeposits];
-        dep.amount = _amount - depositFee;
-        dep.createdTime = getToday(block.timestamp);
-        dep.lockedTime = getComingActionDay(block.timestamp + warm_up_period);
-        dep.lastRewardTime = getComingActionDay(block.timestamp + warm_up_period);
+        user.deposits[user.NoOfDeposits] = Depo({
+            amount: _amount - depositFee,
+            createdTime: getToday(block.timestamp),
+            lockedTime: getComingActionDay(block.timestamp + warm_up_period),
+            lastRewardTime: getComingActionDay(block.timestamp + warm_up_period),
+            currentState: 0,
+            withdrawableDate: 0
+        });
+
 
         user.NoOfDeposits ++;
 
@@ -327,13 +331,15 @@ contract StakingTest is Ownable {
 
         // max claim is initially 10k USDT, if excess then create new Compounded Deposit
         if (finalToClaim > claimLimit) {
-            Depo storage dep = user.deposits[NoOfDeposits];
-            dep.amount = finalToClaim - claimLimit;
-            dep.createdTime = currentTime;
-            dep.lockedTime = currentTime;
-            dep.lastRewardTime = currentTime;
-            dep.currentState = 2;
 
+            user.deposits[NoOfDeposits] = Depo({
+                amount: finalToClaim - claimLimit,
+                createdTime: currentTime,
+                lockedTime: currentTime,
+                lastRewardTime: currentTime,
+                currentState: 2,
+                withdrawableDate: 0
+            });
             user.NoOfDeposits += 1;
             finalToClaim = claimLimit;
         }
@@ -408,12 +414,7 @@ contract StakingTest is Ownable {
             //replace current depo with last depo
             //as a result current depo is removed
             Depo memory lastDep = user.deposits[user.NoOfDeposits - 1];
-            dep.amount = lastDep.amount;
-            dep.createdTime = lastDep.createdTime;
-            dep.lockedTime = lastDep.lockedTime;
-            dep.withdrawableDate = lastDep.withdrawableDate;
-            dep.lastRewardTime = lastDep.lastRewardTime;
-            dep.currentState = lastDep.currentState;
+            user.deposits[_deposit] = lastDep;
 
             user.NoOfDeposits --;
         }
