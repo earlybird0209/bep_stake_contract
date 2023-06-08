@@ -372,7 +372,7 @@ contract StakingTest is Ownable {
 
         user.AdditionalReward += pendingReward(_deposit, msg.sender);
 
-        dep.withdrawableDate = getToday(block.timestamp) + reward_period;
+        dep.withdrawableDate = getToday(block.timestamp) + withdraw_delay;
         dep.currentState = 3;
         emit WithdrawIsInitiated(
             msg.sender,
@@ -396,28 +396,17 @@ contract StakingTest is Ownable {
             "did not passed the initiate_delay"
         );
 
-        uint256 currentTime = getToday(block.timestamp);
         uint256 fee;
 
         uint256 finalAmount = dep.amount;
-        // max withdraw is initially 50k USDT, if excess  then create new Compounded Deposit
-        if (finalAmount > withdrawLimit) {
-            dep.amount = finalAmount - withdrawLimit;
-            dep.lockedTime = currentTime;
-            dep.lastRewardTime = currentTime;
-            dep.currentState = 3;
-            dep.withdrawableDate = currentTime + withdraw_delay;
 
-            finalAmount = withdrawLimit;
-        }
-        else{
-            //replace current depo with last depo
-            //as a result current depo is removed
-            Depo memory lastDep = user.deposits[user.NoOfDeposits - 1];
-            user.deposits[_deposit] = lastDep;
+        //replace current depo with last depo
+        //as a result current depo is removed
+        Depo memory lastDep = user.deposits[user.NoOfDeposits - 1];
+        user.deposits[_deposit] = lastDep;
 
-            user.NoOfDeposits --;
-        }
+        user.NoOfDeposits --;
+
         fee = finalAmount * withdrawFeeBP / 10000;
         finalAmount -= fee;
 
