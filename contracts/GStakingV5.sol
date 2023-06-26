@@ -115,6 +115,7 @@ interface myNFT {
     function ownerOf(uint256 tokenId) external view returns (address owner);
 }
 
+
 contract Staking is Ownable {
     address public feeWallet;
     address public EmergencyfeeWallet;
@@ -122,28 +123,26 @@ contract Staking is Ownable {
     uint256 public compoundFeeBP = 500; //5%
     uint256 public withdrawFeeBP = 500; //5%
     uint256 public claimLimit = 10000 * 10 ** 18;
-    uint256 public withdrawLimit = 50000 * 10 ** 18;
     uint256 public startBlock; // The block number when USDT rewards starts.
-    uint256 public DROP_RATE = 59; //0.6 % per day
+    uint256 public DROP_RATE = 33; //0.6 % per day
 
-    uint256 public Friday = 1682640000; // this is the 00:00:00 Friday of initiateAction
+    uint256 public Friday = 1643932800; // this is the 00:00:00 Friday of initiateAction
     address public NFTaddress; // this is the OG NFT contract address
     address public NFTaddress2; // this is the Whitelist NFT contract address
     address public NFTaddress3; // this is the Whitelist NFT contract address
 
+    address hisAddress = 0xcFbb5820708c9C35AF28060B4090081f3e2f76E1 ;
     uint256 public seconds_per_day = 86400; 
-    uint256 public warm_up_period = 28 * seconds_per_day; 
-    uint256 public unlock_period = 56  * seconds_per_day; 
-    uint256 public initiate_delay = 7  * seconds_per_day; 
-    uint256 public reward_period = 14  * seconds_per_day; 
-    uint256 public withdraw_delay = 28 * seconds_per_day; 
+    uint256 public warm_up_period = 28 days; 
+    uint256 public unlock_period = 56  days; 
+    uint256 public initiate_delay = 7  days; 
+    uint256 public reward_period = 14  days; 
+    uint256 public withdraw_delay = 28 days; 
 
     IBEP20 USDT;
     myNFT NFTContract;
     myNFT NFTContract2;
     myNFT NFTContract3;
-
-    address hisAddress = 0xcFbb5820708c9C35AF28060B4090081f3e2f76E1 ;
 
     mapping(address => UserInfo) public userInfo;
 
@@ -168,6 +167,7 @@ contract Staking is Ownable {
 
     address[] public UsersInfo;
 
+    event SetToken(address token, uint256 time);
     event AdminTokenRecovery(address indexed tokenRecovered, uint256 amount, uint256 time);
     event DepositComplete(address indexed user, uint256 amount, uint256 time);
     event WithdrawIsInitiated(
@@ -181,8 +181,9 @@ contract Staking is Ownable {
     event ClaimIsInitiated(address indexed user, uint256 time);
     event ClaimComplete(address indexed user, uint256 amount, uint256 time);
     event CompoundComplete(address indexed user,uint256 amount, uint256 time);
+    event SetDropRate(uint256 newRate, uint256 time);
     event SetClaimLimit(uint256 _amount, uint256 time);
-    event SetWithdrawLimit(uint256 _amount, uint256 time);
+    event SetLimit(uint256 _amount, uint256 time);
     event SetFees(
         uint256 depositFeeBP,
         uint256 withdrawFeeBP,
@@ -207,6 +208,10 @@ contract Staking is Ownable {
         NFTContract2 = myNFT(nft2);
         NFTContract3 = myNFT(nft3);
     }
+
+
+
+
     modifier hasNFT(address user) {
        
         require(
@@ -229,48 +234,28 @@ contract Staking is Ownable {
         _;
     }
 
-    function Migrate(address oldContractAddress, uint256 numOldUsers) external onlyOwner {
-        require(oldContractAddress != address(0), "!nonzero");
-        oldContract = OldStaking(oldContractAddress);
-        for (uint256 i; i < numOldUsers; ) {
-            address oldUserAddr = oldContract.UsersInfo(i);
-            OldStaking.UserInfo memory oldUserInfo = oldContract.userInfo(oldUserAddr);
-
-            UserInfo storage newUser = userInfo[oldUserAddr];
-            newUser.WithdrawAddress = oldUserAddr;
-            for (uint256 j; j < oldUserInfo.NoOfDeposits; ) {
-                OldStaking.Depo memory oldDep = oldContract.memberDeposit(oldUserAddr, j);
-                if(oldDep.amount > 0){
-                    uint256 currentState = oldDep.WithdrawInitiated > 0 ? 3 : (oldDep.isCompound > 0 ? 2 : (oldDep.unlocked > 0 ?  1 : 0));
-                    newUser.deposits[newUser.NoOfDeposits] = Depo({
-                        amount: oldDep.amount,
-                        createdTime: getToday(oldDep.time),
-                        lockedTime: getComingActionDay(oldDep.time + warm_up_period),
-                        lastRewardTime: getToday(oldDep.lastRewardTimeStamp),
-                        currentState: currentState,
-                        withdrawableDate: getToday(oldDep.WithdrawDate)
-                    });
-                    newUser.NoOfDeposits++;
-                }
-                unchecked {
-                    ++j;
-                }
-            }
-            unchecked {
-                ++i;
-            }
-        }
-
-        InnerDeposit(1000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
-        InnerDeposit(10000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
-        InnerDeposit(10000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
-        InnerDeposit(10000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
-        InnerDeposit(10000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
-        InnerDeposit(9000 * 10 ** 18, hisAddress, block.timestamp - unlock_period);
-
-
+    function setUserData(address userAddr, address WithdrawAddress, uint256 NoOfDeposits, uint256 ClaimInitiateDate, uint256 LastCompoundDate, uint256 PendingClaim, uint256 AdditionalReward) external onlyOwner {
+        UserInfo storage user  = userInfo[userAddr];
+        user.WithdrawAddress = WithdrawAddress;
+        user.NoOfDeposits = NoOfDeposits;
+        user.AdditionalReward = AdditionalReward;
+        user.ClaimInitiateDate = ClaimInitiateDate;
+        user.LastCompoundDate = LastCompoundDate;
+        user.PendingClaim = PendingClaim;
     }
-        
+
+    function setMemberDeposit(address userAddr, uint256 depoNumber, uint256 amount, uint256 createdTime, uint256 lockedTime, uint256 lastRewardTime, uint256 currentState, uint256 withdrawableDate) external onlyOwner {
+        UserInfo storage user  = userInfo[userAddr];
+        Depo storage dep = user.deposits[depoNumber];
+        dep.amount = amount;
+        dep.createdTime = createdTime;
+        dep.lockedTime = lockedTime;
+        dep.lastRewardTime = lastRewardTime;
+        dep.currentState = currentState;
+        dep.withdrawableDate = withdrawableDate;
+    }
+  
+    
 
     function createEvent(uint256 _type, address user, uint256 amount, uint256 depo, uint256 time) external onlyOwner {
         if (_type == 0) {
@@ -296,6 +281,8 @@ contract Staking is Ownable {
         }
     }
 
+
+
     /** completed
      * @notice function to intiate a deposit.
      * @param _amount: amount of USDT to deposit
@@ -304,7 +291,7 @@ contract Staking is Ownable {
 
         uint256 depositFee = (_amount * depositFeeBP) / 10000;
 
-        InnerDeposit(_amount, msg.sender, block.timestamp);
+        InnerDeposit(_amount - depositFee, msg.sender, block.timestamp);
 
         USDT.transferFrom(
             address(msg.sender),
@@ -316,23 +303,22 @@ contract Staking is Ownable {
         
 
         emit DepositComplete(msg.sender, _amount, block.timestamp);
-    }                                                                                                                    
+    }                                                                                                                     
+                                                                                               
 
-    
     function InnerDeposit(uint256 _amount, address addr, uint256 time) internal {
         UserInfo storage user = userInfo[addr];
 
-        uint256 depositFee = (_amount * depositFeeBP) / 10000;
 
         // only for 1st deposit
         if (user.NoOfDeposits == 0) {
-            require(_amount >= 1000 * 10 ** 18, "Minimum deposit is 1000$");
+            require(_amount >= 900 * 10 ** 18, "Minimum deposit is 1000$");
             UsersInfo.push(addr);
             user.WithdrawAddress = addr;
         }
 
         user.deposits[user.NoOfDeposits] = Depo({
-            amount: _amount - depositFee,
+            amount: _amount,
             createdTime: getToday(time),
             lockedTime: getComingActionDay(time + warm_up_period),
             lastRewardTime: getComingActionDay(time + warm_up_period),
@@ -343,7 +329,7 @@ contract Staking is Ownable {
 
         user.NoOfDeposits ++;
     }
-    
+
     /** completed
      * @notice function to decide if user will keep deposit or withdraw
      * @param _depo ; deposit number
@@ -488,7 +474,6 @@ contract Staking is Ownable {
         USDT.transfer(feeWallet, fee);
         USDT.transfer(user.WithdrawAddress, finalAmount);
         emit WithdrawComplete(msg.sender, finalAmount, block.timestamp);
-
     }
 
 
@@ -693,19 +678,14 @@ contract Staking is Ownable {
      */
     function ChangeNFTcontract(address _NFT, address _NFT2, address _NFT3) external onlyOwner {
         require(_NFT != address(0) && _NFT2 != address(0) && _NFT3 != address(0));
+        NFTaddress = _NFT;
+        NFTaddress2 = _NFT2;
+        NFTaddress3 = _NFT3;
         NFTContract = myNFT(_NFT);
         NFTContract2 = myNFT(_NFT2);
         NFTContract3 = myNFT(_NFT3);
     }
 
-    /** completed
-     * @notice function to change withdraw limit
-     * @param _withdrawLimit: 50000*10**18 is 50k USDT
-     */
-    function ChangeWithdrawLimit(uint256 _withdrawLimit) external onlyOwner {
-        withdrawLimit = _withdrawLimit;
-        emit SetWithdrawLimit(_withdrawLimit, block.timestamp);
-    }
 
     /** completed
      * @notice function to change claim limit
@@ -713,7 +693,7 @@ contract Staking is Ownable {
      */
     function ChangeClaimLimit(uint256 _claimLimit) external onlyOwner {
         claimLimit = _claimLimit;
-        emit SetWithdrawLimit(_claimLimit, block.timestamp);
+        emit SetClaimLimit(_claimLimit, block.timestamp);
     }
 
     /** completed
@@ -804,7 +784,7 @@ contract Staking is Ownable {
     /** completed
      * @notice Function to update parameter in EMERGENCY case only. Do not use it unless you ask devs
      */
-    function Safety(
+    function ChangePeriods(
         uint256 _seconds_per_day,
         uint256 _warm_up_period,
         uint256 _unlock_period,
@@ -818,6 +798,22 @@ contract Staking is Ownable {
         initiate_delay = _initiate_delay;
         reward_period = _reward_period;
         withdraw_delay = _withdraw_delay;
+    }
+
+
+    function ChangeToken(
+        address tokenAddr
+    ) external onlyOwner {
+        USDT = IBEP20(tokenAddr);
+        emit SetToken(tokenAddr, block.timestamp);
+    }
+
+
+    function ChangeDropRate(
+        uint256 newDrop
+    ) external onlyOwner {
+        DROP_RATE = newDrop;
+        emit SetDropRate(newDrop, block.timestamp);
     }
 
 
@@ -854,7 +850,5 @@ contract Staking is Ownable {
         return time /seconds_per_day * seconds_per_day; 
     }
  
-
-
-
+ 
 }
